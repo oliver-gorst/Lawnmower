@@ -100,8 +100,9 @@ struct ContentView: View {
                                 subtitle: "App preferences",
                                 icon: "gearshape.fill",
                                 accentColor: Color(red: 0.75, green: 0.75, blue: 0.80),
-                                destination: PlaceholderView(title: "Settings")
+                                destination: SettingsView()
                             )
+                            
                         }
                         .padding(.horizontal, 20)
 

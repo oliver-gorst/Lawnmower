@@ -3,14 +3,26 @@ import CoreLocation
 
 struct RainfallView: View {
     @StateObject private var locationManager = LocationManager()
+    @ObservedObject var settings = AppSettings.shared
     @State private var rainfallData: [DayRainfall] = []
     @State private var isLoading = true
     @State private var errorMessage: String?
-    @State private var totalRainfall: Double = 0
+    @State private var totalRainfallInches: Double = 0
+
+    var displayTotal: Double {
+        settings.useMetric ? totalRainfallInches / 0.0393701 : totalRainfallInches
+    }
+
+    var unitLabel: String {
+        settings.useMetric ? "mm" : "in"
+    }
+
+    var formatString: String {
+        settings.useMetric ? "%.1f mm" : "%.2f in"
+    }
 
     var body: some View {
         ZStack {
-            // Deep green gradient background
             LinearGradient(
                 colors: [
                     Color(red: 0.08, green: 0.28, blue: 0.08),
@@ -21,7 +33,6 @@ struct RainfallView: View {
             )
             .ignoresSafeArea()
 
-            // Subtle dot texture overlay
             Canvas { context, size in
                 for row in stride(from: 0, to: size.height, by: 18) {
                     for col in stride(from: 0, to: size.width, by: 18) {
@@ -32,7 +43,6 @@ struct RainfallView: View {
             }
             .ignoresSafeArea()
 
-            // Grass along the bottom
             GeometryReader { geo in
                 BackgroundGrass(width: geo.size.width, height: geo.size.height)
             }
@@ -65,7 +75,7 @@ struct RainfallView: View {
                                 .foregroundColor(.red.opacity(0.8))
                                 .multilineTextAlignment(.center)
                         } else {
-                            Text(String(format: "%.2f in", totalRainfall))
+                            Text(String(format: formatString, displayTotal))
                                 .font(.system(size: 52, weight: .bold, design: .rounded))
                                 .foregroundColor(.white)
 
@@ -103,7 +113,9 @@ struct RainfallView: View {
                                 ForEach(rainfallData) { day in
                                     RainfallRow(
                                         day: day,
-                                        maxRainfall: rainfallData.map { $0.rainfall }.max() ?? 1
+                                        maxRainfall: rainfallData.map { $0.rainfallInches }.max() ?? 1,
+                                        formatString: formatString,
+                                        useMetric: settings.useMetric
                                     )
                                     if day.id != rainfallData.last?.id {
                                         Divider()
@@ -191,11 +203,11 @@ struct RainfallView: View {
                         return DayRainfall(
                             date: parsedDate,
                             label: labelFormatter.string(from: parsedDate),
-                            rainfall: (rain ?? 0) * 0.0393701
+                            rainfallInches: (rain ?? 0) * 0.0393701
                         )
                     }
 
-                    totalRainfall = rainfallData.reduce(0) { $0 + $1.rainfall }
+                    totalRainfallInches = rainfallData.reduce(0) { $0 + $1.rainfallInches }
                     isLoading = false
                 } catch {
                     isLoading = false
@@ -210,6 +222,16 @@ struct RainfallView: View {
 struct RainfallRow: View {
     let day: DayRainfall
     let maxRainfall: Double
+    let formatString: String
+    let useMetric: Bool
+
+    var displayRainfall: Double {
+        useMetric ? day.rainfallInches / 0.0393701 : day.rainfallInches
+    }
+
+    var displayMax: Double {
+        useMetric ? maxRainfall / 0.0393701 : maxRainfall
+    }
 
     var body: some View {
         HStack(spacing: 12) {
@@ -227,8 +249,8 @@ struct RainfallRow: View {
                     RoundedRectangle(cornerRadius: 4)
                         .fill(Color(red: 0.45, green: 0.75, blue: 1.0))
                         .frame(
-                            width: day.rainfall > 0
-                                ? geo.size.width * CGFloat(day.rainfall / max(maxRainfall, 1))
+                            width: displayRainfall > 0
+                                ? geo.size.width * CGFloat(displayRainfall / max(displayMax, 1))
                                 : 3,
                             height: 10
                         )
@@ -236,7 +258,7 @@ struct RainfallRow: View {
             }
             .frame(height: 10)
 
-            Text(String(format: "%.2f in", day.rainfall))
+            Text(String(format: formatString, displayRainfall))
                 .font(.system(size: 13, weight: .medium))
                 .foregroundColor(.white.opacity(0.5))
                 .frame(width: 62, alignment: .trailing)
@@ -251,7 +273,7 @@ struct DayRainfall: Identifiable {
     let id = UUID()
     let date: Date
     let label: String
-    let rainfall: Double
+    let rainfallInches: Double
 }
 
 struct OpenMeteoResponse: Codable {
