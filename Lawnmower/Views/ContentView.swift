@@ -1,6 +1,30 @@
 import SwiftUI
+import Combine
 
 struct ContentView: View {
+    @AppStorage("lastMowedDate") private var lastMowedTimestamp: Double = 0
+    @State private var timer = Timer.publish(every: 60, on: .main, in: .common).autoconnect()
+    @State private var tick = false
+
+    var lastMowedDate: Date? {
+        lastMowedTimestamp == 0 ? nil : Date(timeIntervalSince1970: lastMowedTimestamp)
+    }
+
+    var daysSinceLabel: String {
+        guard let date = lastMowedDate else { return "Never" }
+        let components = Calendar.current.dateComponents([.day, .hour, .minute], from: date, to: Date())
+        let days = components.day ?? 0
+        let hours = components.hour ?? 0
+        let minutes = components.minute ?? 0
+
+        if days > 0 {
+            return "\(days)d \(hours)h \(minutes)m"
+        } else if hours > 0 {
+            return "\(hours)h \(minutes)m"
+        } else {
+            return "\(minutes)m"
+        }
+    }
 
     func greeting() -> String {
         let hour = Calendar.current.component(.hour, from: Date())
@@ -15,7 +39,6 @@ struct ContentView: View {
     var body: some View {
         NavigationStack {
             ZStack {
-                // Deep green gradient background
                 LinearGradient(
                     colors: [
                         Color(red: 0.08, green: 0.28, blue: 0.08),
@@ -26,7 +49,6 @@ struct ContentView: View {
                 )
                 .ignoresSafeArea()
 
-                // Subtle dot texture overlay
                 Canvas { context, size in
                     for row in stride(from: 0, to: size.height, by: 18) {
                         for col in stride(from: 0, to: size.width, by: 18) {
@@ -37,7 +59,6 @@ struct ContentView: View {
                 }
                 .ignoresSafeArea()
 
-                // Grass along the bottom of the screen
                 GeometryReader { geo in
                     BackgroundGrass(width: geo.size.width, height: geo.size.height)
                 }
@@ -86,7 +107,7 @@ struct ContentView: View {
                                 subtitle: "Your property zones",
                                 icon: "map.fill",
                                 accentColor: Color(red: 0.35, green: 0.65, blue: 0.95),
-                                destination: PlaceholderView(title: "Lawn Map")
+                                destination: LawnMapView()
                             )
                             MenuCard(
                                 title: "Rainfall",
@@ -102,45 +123,62 @@ struct ContentView: View {
                                 accentColor: Color(red: 0.75, green: 0.75, blue: 0.80),
                                 destination: SettingsView()
                             )
-                            
                         }
                         .padding(.horizontal, 20)
 
-                        // Quick status card
+                        // Last mowed card
                         VStack(alignment: .leading, spacing: 14) {
-                            HStack {
-                                Text("Quick Status")
-                                    .font(.system(size: 13, weight: .semibold))
-                                    .foregroundColor(.white.opacity(0.5))
-                                    .textCase(.uppercase)
-                                    .kerning(0.8)
-                                Spacer()
-                            }
+                            Text("Last Mowed")
+                                .font(.system(size: 13, weight: .semibold))
+                                .foregroundColor(.white.opacity(0.5))
+                                .textCase(.uppercase)
+                                .kerning(0.8)
 
                             HStack(spacing: 12) {
-                                StatusPill(
-                                    icon: "lawnmower.fill",
-                                    label: "Last Mowed",
-                                    value: "3 days ago",
-                                    color: Color(red: 0.25, green: 0.78, blue: 0.35)
-                                )
-                                Rectangle()
-                                    .fill(.white.opacity(0.1))
-                                    .frame(width: 1, height: 36)
-                                StatusPill(
-                                    icon: "drop.fill",
-                                    label: "Last Watered",
-                                    value: "Yesterday",
-                                    color: Color(red: 0.45, green: 0.75, blue: 1.0)
-                                )
+
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text(daysSinceLabel)
+                                        .font(.system(size: 28, weight: .bold, design: .rounded))
+                                        .foregroundColor(.white)
+                                    if let date = lastMowedDate {
+                                        Text(date.formatted(date: .abbreviated, time: .omitted))
+                                            .font(.system(size: 13))
+                                            .foregroundColor(.white.opacity(0.45))
+                                    } else {
+                                        Text("No mow logged yet")
+                                            .font(.system(size: 13))
+                                            .foregroundColor(.white.opacity(0.45))
+                                    }
+                                }
+
+                                Spacer()
+
+                                Button {
+                                    lastMowedTimestamp = Date().timeIntervalSince1970
+                                    NotificationManager.shared.scheduleMowReminder(lastMowedTimestamp: lastMowedTimestamp)
+                                } label: {
+                                    HStack(spacing: 8) {
+                                        Image(systemName: "checkmark.circle.fill")
+                                            .font(.system(size: 16))
+                                        Text("I Mowed")
+                                            .font(.system(size: 15, weight: .semibold))
+                                    }
+                                    .foregroundColor(.white)
+                                    .padding(.horizontal, 18)
+                                    .padding(.vertical, 12)
+                                    .background(
+                                        RoundedRectangle(cornerRadius: 14)
+                                            .fill(Color(red: 0.25, green: 0.78, blue: 0.35).opacity(0.8))
+                                    )
+                                }
                             }
                         }
                         .padding(18)
                         .background(
-                            RoundedRectangle(cornerRadius: 20)
+                            RoundedRectangle(cornerRadius: 22)
                                 .fill(.white.opacity(0.08))
                                 .overlay(
-                                    RoundedRectangle(cornerRadius: 20)
+                                    RoundedRectangle(cornerRadius: 22)
                                         .strokeBorder(.white.opacity(0.12), lineWidth: 1)
                                 )
                         )
@@ -148,119 +186,11 @@ struct ContentView: View {
                     }
                     .padding(.bottom, 160)
                 }
+                .onReceive(timer) { _ in
+                    tick.toggle()
+                }
             }
             .navigationBarHidden(true)
-        }
-    }
-}
-
-// MARK: - Background Grass
-struct BackgroundGrass: View {
-    let width: CGFloat
-    let height: CGFloat
-
-    var body: some View {
-        Canvas { context, size in
-            struct Blade {
-                let x: CGFloat
-                let bladeHeight: CGFloat
-                let curve: CGFloat
-                let bladeWidth: CGFloat
-                let opacity: Double
-            }
-
-            // Generate dense grass across full width at bottom
-            let blades: [Blade] = [
-                // Back row - tallest, most transparent
-                Blade(x: width * 0.00, bladeHeight: 140, curve: -14, bladeWidth: 10, opacity: 0.12),
-                Blade(x: width * 0.04, bladeHeight: 160, curve: 12, bladeWidth: 11, opacity: 0.10),
-                Blade(x: width * 0.08, bladeHeight: 130, curve: -10, bladeWidth: 9,  opacity: 0.13),
-                Blade(x: width * 0.12, bladeHeight: 150, curve: 15, bladeWidth: 10, opacity: 0.11),
-                Blade(x: width * 0.16, bladeHeight: 145, curve: -12, bladeWidth: 11, opacity: 0.12),
-                Blade(x: width * 0.20, bladeHeight: 155, curve: 10, bladeWidth: 9,  opacity: 0.10),
-                Blade(x: width * 0.24, bladeHeight: 135, curve: -15, bladeWidth: 10, opacity: 0.13),
-                Blade(x: width * 0.28, bladeHeight: 160, curve: 12, bladeWidth: 11, opacity: 0.11),
-                Blade(x: width * 0.32, bladeHeight: 140, curve: -10, bladeWidth: 9,  opacity: 0.12),
-                Blade(x: width * 0.36, bladeHeight: 150, curve: 14, bladeWidth: 10, opacity: 0.10),
-                Blade(x: width * 0.40, bladeHeight: 145, curve: -12, bladeWidth: 11, opacity: 0.13),
-                Blade(x: width * 0.44, bladeHeight: 155, curve: 11, bladeWidth: 9,  opacity: 0.11),
-                Blade(x: width * 0.48, bladeHeight: 135, curve: -14, bladeWidth: 10, opacity: 0.12),
-                Blade(x: width * 0.52, bladeHeight: 160, curve: 12, bladeWidth: 11, opacity: 0.10),
-                Blade(x: width * 0.56, bladeHeight: 140, curve: -10, bladeWidth: 9,  opacity: 0.13),
-                Blade(x: width * 0.60, bladeHeight: 150, curve: 15, bladeWidth: 10, opacity: 0.11),
-                Blade(x: width * 0.64, bladeHeight: 145, curve: -12, bladeWidth: 11, opacity: 0.12),
-                Blade(x: width * 0.68, bladeHeight: 155, curve: 10, bladeWidth: 9,  opacity: 0.10),
-                Blade(x: width * 0.72, bladeHeight: 135, curve: -15, bladeWidth: 10, opacity: 0.13),
-                Blade(x: width * 0.76, bladeHeight: 160, curve: 12, bladeWidth: 11, opacity: 0.11),
-                Blade(x: width * 0.80, bladeHeight: 140, curve: -10, bladeWidth: 9,  opacity: 0.12),
-                Blade(x: width * 0.84, bladeHeight: 150, curve: 14, bladeWidth: 10, opacity: 0.10),
-                Blade(x: width * 0.88, bladeHeight: 145, curve: -12, bladeWidth: 11, opacity: 0.13),
-                Blade(x: width * 0.92, bladeHeight: 155, curve: 11, bladeWidth: 9,  opacity: 0.11),
-                Blade(x: width * 0.96, bladeHeight: 135, curve: -14, bladeWidth: 10, opacity: 0.12),
-
-                // Middle row - medium height
-                Blade(x: width * 0.02, bladeHeight: 100, curve: 10, bladeWidth: 12, opacity: 0.18),
-                Blade(x: width * 0.07, bladeHeight: 115, curve: -13, bladeWidth: 13, opacity: 0.20),
-                Blade(x: width * 0.13, bladeHeight: 105, curve: 11, bladeWidth: 12, opacity: 0.18),
-                Blade(x: width * 0.19, bladeHeight: 120, curve: -10, bladeWidth: 13, opacity: 0.20),
-                Blade(x: width * 0.25, bladeHeight: 100, curve: 14, bladeWidth: 12, opacity: 0.18),
-                Blade(x: width * 0.31, bladeHeight: 110, curve: -12, bladeWidth: 13, opacity: 0.20),
-                Blade(x: width * 0.37, bladeHeight: 105, curve: 10, bladeWidth: 12, opacity: 0.18),
-                Blade(x: width * 0.43, bladeHeight: 120, curve: -13, bladeWidth: 13, opacity: 0.20),
-                Blade(x: width * 0.49, bladeHeight: 100, curve: 11, bladeWidth: 12, opacity: 0.18),
-                Blade(x: width * 0.55, bladeHeight: 115, curve: -10, bladeWidth: 13, opacity: 0.20),
-                Blade(x: width * 0.61, bladeHeight: 105, curve: 14, bladeWidth: 12, opacity: 0.18),
-                Blade(x: width * 0.67, bladeHeight: 120, curve: -12, bladeWidth: 13, opacity: 0.20),
-                Blade(x: width * 0.73, bladeHeight: 100, curve: 10, bladeWidth: 12, opacity: 0.18),
-                Blade(x: width * 0.79, bladeHeight: 110, curve: -13, bladeWidth: 13, opacity: 0.20),
-                Blade(x: width * 0.85, bladeHeight: 105, curve: 11, bladeWidth: 12, opacity: 0.18),
-                Blade(x: width * 0.91, bladeHeight: 120, curve: -10, bladeWidth: 13, opacity: 0.20),
-                Blade(x: width * 0.97, bladeHeight: 100, curve: 14, bladeWidth: 12, opacity: 0.18),
-
-                // Front row - shortest, most opaque
-                Blade(x: width * 0.01, bladeHeight: 70, curve: -8,  bladeWidth: 14, opacity: 0.28),
-                Blade(x: width * 0.06, bladeHeight: 80, curve: 11,  bladeWidth: 15, opacity: 0.30),
-                Blade(x: width * 0.12, bladeHeight: 72, curve: -10, bladeWidth: 14, opacity: 0.28),
-                Blade(x: width * 0.18, bladeHeight: 85, curve: 8,   bladeWidth: 15, opacity: 0.30),
-                Blade(x: width * 0.24, bladeHeight: 70, curve: -12, bladeWidth: 14, opacity: 0.28),
-                Blade(x: width * 0.30, bladeHeight: 78, curve: 10,  bladeWidth: 15, opacity: 0.30),
-                Blade(x: width * 0.36, bladeHeight: 72, curve: -8,  bladeWidth: 14, opacity: 0.28),
-                Blade(x: width * 0.42, bladeHeight: 85, curve: 11,  bladeWidth: 15, opacity: 0.30),
-                Blade(x: width * 0.48, bladeHeight: 70, curve: -10, bladeWidth: 14, opacity: 0.28),
-                Blade(x: width * 0.54, bladeHeight: 80, curve: 8,   bladeWidth: 15, opacity: 0.30),
-                Blade(x: width * 0.60, bladeHeight: 72, curve: -12, bladeWidth: 14, opacity: 0.28),
-                Blade(x: width * 0.66, bladeHeight: 85, curve: 10,  bladeWidth: 15, opacity: 0.30),
-                Blade(x: width * 0.72, bladeHeight: 70, curve: -8,  bladeWidth: 14, opacity: 0.28),
-                Blade(x: width * 0.78, bladeHeight: 78, curve: 11,  bladeWidth: 15, opacity: 0.30),
-                Blade(x: width * 0.84, bladeHeight: 72, curve: -10, bladeWidth: 14, opacity: 0.28),
-                Blade(x: width * 0.90, bladeHeight: 85, curve: 8,   bladeWidth: 15, opacity: 0.30),
-                Blade(x: width * 0.96, bladeHeight: 70, curve: -12, bladeWidth: 14, opacity: 0.28),
-            ]
-
-            for blade in blades {
-                var path = Path()
-                let baseY = size.height
-                let tipX = blade.x + blade.curve
-                let tipY = size.height - blade.bladeHeight
-                let ctrlX = blade.x + blade.curve * 0.7
-                let ctrlY = size.height - blade.bladeHeight * 0.5
-                let rightBaseX = blade.x + blade.bladeWidth
-                let rightTipX = tipX + blade.bladeWidth * 0.4
-                let rightCtrlX = ctrlX + blade.bladeWidth * 0.4
-
-                path.move(to: CGPoint(x: blade.x, y: baseY))
-                path.addQuadCurve(
-                    to: CGPoint(x: tipX, y: tipY),
-                    control: CGPoint(x: ctrlX, y: ctrlY)
-                )
-                path.addLine(to: CGPoint(x: rightTipX, y: tipY))
-                path.addQuadCurve(
-                    to: CGPoint(x: rightBaseX, y: baseY),
-                    control: CGPoint(x: rightCtrlX, y: ctrlY)
-                )
-                path.closeSubpath()
-                context.fill(path, with: .color(.white.opacity(blade.opacity)))
-            }
         }
     }
 }
@@ -276,8 +206,6 @@ struct MenuCard<Destination: View>: View {
     var body: some View {
         NavigationLink(destination: destination) {
             ZStack(alignment: .bottomLeading) {
-
-                // Card background
                 RoundedRectangle(cornerRadius: 22)
                     .fill(
                         LinearGradient(
@@ -290,7 +218,6 @@ struct MenuCard<Destination: View>: View {
                         )
                     )
 
-                // Glass border
                 RoundedRectangle(cornerRadius: 22)
                     .strokeBorder(
                         LinearGradient(
@@ -301,7 +228,6 @@ struct MenuCard<Destination: View>: View {
                         lineWidth: 1
                     )
 
-                // Content
                 VStack(alignment: .leading, spacing: 10) {
                     ZStack {
                         RoundedRectangle(cornerRadius: 12)
@@ -338,31 +264,6 @@ struct CardButtonStyle: ButtonStyle {
         configuration.label
             .scaleEffect(configuration.isPressed ? 0.96 : 1.0)
             .animation(.spring(response: 0.3, dampingFraction: 0.7), value: configuration.isPressed)
-    }
-}
-
-// MARK: - Status Pill
-struct StatusPill: View {
-    let icon: String
-    let label: String
-    let value: String
-    let color: Color
-
-    var body: some View {
-        HStack(spacing: 10) {
-            Image(systemName: icon)
-                .foregroundColor(color)
-                .font(.system(size: 16))
-            VStack(alignment: .leading, spacing: 2) {
-                Text(label)
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundColor(.white.opacity(0.45))
-                Text(value)
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundColor(.white)
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 

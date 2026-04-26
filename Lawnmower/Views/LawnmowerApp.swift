@@ -6,12 +6,18 @@
 //
 
 import SwiftUI
+import AppIntents
 
 @main
 struct LawnmowerApp: App {
+    init() {
+        NotificationManager.shared.requestPermission()
+        LawnmowerShortcuts.updateAppShortcutParameters()
+    }
+
     var body: some Scene {
         WindowGroup {
-            SplashView() 
+            SplashView()
         }
     }
 }
